@@ -1,0 +1,25 @@
+tw-eval.sh
+
+evaluate PACE2016 track A submissions.
+
+USAGE:
+
+tw-eval-ex.sh <grfile> <timeout>
+tw-eval-he.sh <grfile> <timeout>
+
+these programs run `tw-exact` and `tw-heuristic`, respectively, on grfile. send
+SIGTERM after timeout and write test results (including logs) to stdout.
+
+REMARK:
+
+Both commands run the same script with slightly different parameters.
+
+tw-eval-he.sh regularly sends USR1 signals to the process under evaluation.
+this process, tw-heuristic, is expected to print the best known upper bound (to
+stdout) at these times. the computed tree decomposition must prove these
+bounds.
+
+BUGS:
+
+Uses multiple sleep to navigate time. The expenses are added to the reported
+system resource usage.

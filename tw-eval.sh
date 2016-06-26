@@ -81,7 +81,7 @@ sleep $inittime
 # but don't wait for it...
 while [ $num_int -gt 0 ]; do
 	sleep $sleeptime;
-	kill -0 $pid 2>/dev/null || break;
+	kill -0 $pid 2>/dev/null || return 0;
 	if [ "$mode" = he ]; then
 		kill -SIGUSR1 $pid 2>/dev/null
 	fi
@@ -94,10 +94,20 @@ if [ $num_int -eq 0 ]; then
 	kill -SIGTERM $pid 2>/dev/null
 fi
 
-wait $pid;
+# last chance to print something.
+sleep 1
+kill -0 $pid 2>/dev/null || return 0;
+
+# failed.
+kill -SIGKILL $pid 2>/dev/null
+return 1
+
+# no need to wait, probably.
+# wait $pid;
 }
 
 time_run=$( (time run) 2>&1 )
+exit_properly=$?
 
 time_runs=( $time_run )
 time_real=${time_runs[1]}
@@ -126,6 +136,9 @@ done < <(sed -n '/^[0-9]/p; /^s/q' < $outtmp)
 
 echo =======validation============================ >> $logfile
 dbs=$(head -n1 $stem.td | cut -f 4 -d ' ')
+if [ -z "$dbs" ]; then
+	dbs=-1
+fi
 if [ -z "$last_intermediate" ]; then
 	int_ok=N/A
 elif [ "$last_intermediate" -lt "$dbs" ]; then
@@ -133,9 +146,16 @@ elif [ "$last_intermediate" -lt "$dbs" ]; then
 else
 	int_ok=yes
 fi
-echo intermediate ok: $int_ok
+if [ $exit_properly -eq 0 ]; then
+	echo exited properly >> $logfile;
+else
+	echo DID NOT exit properly >> $logfile;
+fi
 
-echo -n "tree decomposition: "
+
+echo intermediate ok: $int_ok >> $logfile
+
+echo -n "tree decomposition: " >> $logfile
 cmd="td-validate $file $stem.td"
 $cmd &>> $logfile
 vresult=$?
@@ -147,10 +167,9 @@ echo $time_run >> $logfile
 IFS=$OLDIFS
 
 echo =======misc================================== >> $logfile
-echo -n "cwd: " >> $logfile
-pwd >> $logfile
-echo -n "timestamp: " >> $logfile
-date >> $logfile
+echo "user: $(whoami)" >> $logfile
+echo "cwd: $(pwd)" >> $logfile
+echo "timestamp: $(date)" >> $logfile
 echo -n "input sha1: " >> $logfile
 sha1sum < $file >>$logfile
 echo -n "treedec sha1: " >> $logfile
@@ -158,7 +177,7 @@ sha1sum < $stem.td >>$logfile
 
 echo last_intermediate: $last_intermediate >> $logfile
 echo decomposition bag size: $dbs >> $logfile
-echo -n "valid: " >> $logfile
+echo -n "valid treedecomposition: " >> $logfile
 if [ $vresult -ne 0 ]; then
 	echo no >> $logfile
 elif [ "$mode" = he ]; then
@@ -167,10 +186,15 @@ else
 	echo yes >> $logfile
 fi
 
+# TODO
+# if mode=ex
+# echo optimal treedecomposition: yes/no
+
 echo =======tree decomposition================= >> $logfile
 cat $stem.td >> $logfile
 
 echo ========csv============================== >> $logfile
-echo "$basename; $dbs; $vresult; $time_real; $time_user; $time_sys"
+status=`expr $vresult + $exit_properly + $exit_properly`
+echo "$basename; $dbs; $status; $time_real; $time_user; $time_sys" >> $logfile
 
 exit $vresult

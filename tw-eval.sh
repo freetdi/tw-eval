@@ -24,6 +24,7 @@ file=$1
 timeout=$2
 num_int=20
 program=tw-heuristic
+version=0
 
 # let it boot... need more?
 inittime=0.01
@@ -95,19 +96,23 @@ if [ $num_int -eq 0 ]; then
 fi
 
 # last chance to print something.
-sleep 1
-kill -0 $pid 2>/dev/null || return 0;
+exceed=0
+while [ $exceed -lt 10 ]; do
+	sleep .1
+	kill -0 $pid 2>/dev/null || return $exceed;
+	(( exceed=exceed+1 ))
+done;
 
 # failed.
 kill -SIGKILL $pid 2>/dev/null
-return 1
+return -1
 
 # no need to wait, probably.
 # wait $pid;
 }
 
 time_run=$( (time run) 2>&1 )
-exit_properly=$?
+exceed=$?
 
 time_runs=( $time_run )
 time_real=${time_runs[1]}
@@ -146,10 +151,10 @@ elif [ "$last_intermediate" -lt "$dbs" ]; then
 else
 	int_ok=yes
 fi
-if [ $exit_properly -eq 0 ]; then
+if [ $exceed -eq 0 ]; then
 	echo exited properly >> $logfile;
 else
-	echo DID NOT exit properly >> $logfile;
+	echo DID NOT exit timely >> $logfile;
 fi
 
 
@@ -194,7 +199,8 @@ echo =======tree decomposition================= >> $logfile
 cat $stem.td >> $logfile
 
 echo ========csv============================== >> $logfile
-status=`expr $vresult + $exit_properly + $exit_properly`
-echo "$basename; $dbs; $status; $time_real; $time_user; $time_sys" >> $logfile
+status=`expr $vresult`
+echo -n "$version; $basename; $timeout; $dbs; $status; $exceed; " >> $logfile
+echo    "$time_real; $time_user; $time_sys" >> $logfile
 
 exit $vresult

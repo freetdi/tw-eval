@@ -18,13 +18,19 @@
 #
 #
 
+if [ $# -ne 2 ]; then
+	echo usage:
+	echo "$0 <grfile> <timeout>"
+	exit 2
+fi
 
 OLDIFS=$IFS
 file=$1
 timeout=$2
 num_int=20
 program=tw-heuristic
-version=0
+exceed_grace=10
+version=1
 
 # let it boot... need more?
 inittime=0.01
@@ -97,7 +103,7 @@ fi
 
 # last chance to print something.
 exceed=0
-while [ $exceed -lt 10 ]; do
+while [ $exceed -lt $exceed_grace ]; do
 	sleep .1
 	kill -0 $pid 2>/dev/null || return $exceed;
 	(( exceed=exceed+1 ))
@@ -144,6 +150,7 @@ dbs=$(head -n1 $stem.td | cut -f 4 -d ' ')
 if [ -z "$dbs" ]; then
 	dbs=-1
 fi
+
 if [ -z "$last_intermediate" ]; then
 	int_ok=N/A
 elif [ "$last_intermediate" -lt "$dbs" ]; then
@@ -151,12 +158,14 @@ elif [ "$last_intermediate" -lt "$dbs" ]; then
 else
 	int_ok=yes
 fi
+
 if [ $exceed -eq 0 ]; then
 	echo exited properly >> $logfile;
+elif [ $exceed -eq 255 ]; then
+	echo did not exit timely \(KILLED\) >> $logfile;
 else
-	echo DID NOT exit timely >> $logfile;
+	echo did not exit timely \($exceed/$exceed_grace\) >> $logfile;
 fi
-
 
 echo intermediate ok: $int_ok >> $logfile
 

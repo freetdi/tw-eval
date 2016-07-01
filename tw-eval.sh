@@ -62,8 +62,8 @@ logfile=/dev/stdout # $stem.log
 me=$(basename $0)
 # exec 2>$logfile
 
-outtmp=/tmp/$me_$$_out
-errtmp=/tmp/$me_$$_err
+outtmp=/dev/shm/$me_$$_out
+errtmp=/dev/shm/$me_$$_err
 trap "rm -f $errtmp $outtmp" EXIT
 
 # : > $logfile

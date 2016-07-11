@@ -96,9 +96,11 @@ while [ $num_int -gt 0 ]; do
 done;
 
 if [ $num_int -eq 0 ]; then
-	sleep .01; # how to avoid it!?
+	sleep .1; # how to avoid it!?
 
-	kill -SIGTERM -$pid 2>/dev/null
+	kill -SIGTERM -- -$pid 2>/dev/null
+	# why this?
+	kill -SIGTERM $pid 2>/dev/null
 fi
 
 # last chance to print something.

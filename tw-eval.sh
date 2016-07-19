@@ -18,166 +18,114 @@
 #
 #
 
-if [ $# -ne 2 ]; then
+if [ $# -ne 3 ]; then
 	echo usage:
-	echo "$0 <grfile> <timeout>"
+	echo "$0 <program> <grfile> <timeout>"
 	exit 2
 fi
 
-OLDIFS=$IFS
-file=$1
-timeout=$2
-num_int=20
-program=tw-heuristic
-exceed_grace=10
+program=$1
+file=$2
+timeout=$3
 version=1
-
-# let it boot... need more?
-inittime=0.01
-
-b=$( basename $0 )
-if [ $b = tw-eval-ex.sh ]; then
-	mode=ex
-	num_int=1000
-	program=tw-exact
-else
-	mode=he
-fi
-
-sleeptime=$(echo $timeout / $num_int | bc -l)
+TDVALIDATE=td-validate # must be in PATH
 
 if [ -z "$file" ]; then
 	echo need gr file >&2
 	exit -1
-fi	
+fi
 
 if [ ! -f $file ]; then
 	echo $file does not exist >&2
 	exit -1
-fi	
+fi
 
 basename=`basename $file`
 stem=${basename%.gr}
-logfile=/dev/stdout # $stem.log
 me=$(basename $0)
-# exec 2>$logfile
 
-outtmp=/dev/shm/$me_$$_out
-errtmp=/dev/shm/$me_$$_err
-trap "rm -f $errtmp $outtmp" EXIT
+tmpdir=$(mktemp --directory --tmpdir=/dev/shm $me-XXXXXXXX)
+trap "rm -rf $tmpdir" EXIT
 
-# : > $logfile
+input=$tmpdir/input.gr
+outtmp=$tmpdir/out
+errtmp=$tmpdir/err
+logfile=/dev/stdout # or $stem.log or $tmpdir/$stem.log
+
+# copy input file to ramdisk
+cp $file $input
+
+SEED=`od -An -t u4 -N4 /dev/urandom`
 
 echo =======what============================ >> $logfile
 echo program: `which $program` >> $logfile
-echo mode: $mode >>$logfile
 echo input graph: $file >> $logfile
 echo timeout: $timeout >> $logfile
-echo num_int: $num_int >> $logfile
+echo random seed: $SEED >> $logfile
 
 run()
 {
-
-$program $TWH_ARGS < $file 2>$errtmp >$outtmp &
-pid=$!
-
-sleep $inittime
-
-# this is a bit ugly
-# need to kill the process after timeout.
-# but don't wait for it...
-while [ $num_int -gt 0 ]; do
-	sleep $sleeptime;
-	kill -0 $pid 2>/dev/null || return 0;
-	if [ "$mode" = he ]; then
-		kill -SIGUSR1 $pid 2>/dev/null
-	fi
-	(( num_int=num_int-1 ))
-done;
-
-if [ $num_int -eq 0 ]; then
-	sleep .1; # how to avoid it!?
-
-	kill -SIGTERM -- -$pid 2>/dev/null
-	# why this?
-	kill -SIGTERM $pid 2>/dev/null
-fi
-
-# last chance to print something.
-exceed=0
-while [ $exceed -lt $exceed_grace ]; do
-	sleep .1
-	kill -0 $pid 2>/dev/null || return $exceed;
-	(( exceed=exceed+1 ))
-done;
-
-# failed.
-kill -SIGKILL $pid 2>/dev/null
-return -1
-
-# no need to wait, probably.
-# wait $pid;
+  # run the program for a duration of $timeout then send TERM
+  # if still running after .5 seconds, also send KILL
+  timeout --kill-after=.5 --signal=TERM $timeout $program -s $SEED \
+    <  $input \
+    2> $errtmp \
+    >  $outtmp
 }
 
+sync
+
+# set the current Unix time in milliseconds
+start_time=$(($(date +'%s * 1000 + %-N / 1000000')))
 time_run=$( (time run) 2>&1 )
-exceed=$?
+exit_status=$?
 
 time_runs=( $time_run )
 time_real=${time_runs[1]}
 time_user=${time_runs[3]}
 time_sys=${time_runs[5]}
 
-# ps aux| grep tee
-# wc -l $outtmp | tee $logfile
-
-sed -n '/^s/,//p' <$outtmp >$stem.td
+grep -v -e '^c status' <$outtmp >$stem.td
 
 echo =======stderr output from program========= >> $logfile
 cat $errtmp >> $logfile
 
 echo =======intermediate results================ >> $logfile
 
-last_intermediate=
+# get graph's number of vertices
+num_vertices=$(grep -e '^p' $input | cut -f 3 -d ' ')
 
+# everyone starts with a trivial tree decomposition
+echo $num_vertices $start_time >> $logfile
+
+grep -e '^c status' $outtmp |
 while read n
 do {
-	last_intermediate="$n";
-	echo $n >> $logfile;
+  echo $n | cut -f 3,4 -d ' ' >> $logfile
 }
-done < <(sed -n '/^[0-9]/p; /^s/q' < $outtmp)
-
+done
 
 echo =======validation============================ >> $logfile
-dbs=$(head -n1 $stem.td | cut -f 4 -d ' ')
+dbs=$(grep -e '^s' $stem.td | cut -f 4 -d ' ')
 if [ -z "$dbs" ]; then
 	dbs=-1
 fi
 
-if [ -z "$last_intermediate" ]; then
-	int_ok=N/A
-elif [ "$last_intermediate" -lt "$dbs" ]; then
-	int_ok=NO
+if [ $exit_status -eq 0 ]; then
+  echo -n exited on its own >> $logfile;
+elif [ $exit_status -eq 124 ]; then
+	echo -n exited when we sent TERM >> $logfile;
 else
-	int_ok=yes
+  echo -n failure: either we sent KILL or it aborted >> $logfile;
 fi
-
-if [ $exceed -eq 0 ]; then
-	echo exited properly >> $logfile;
-elif [ $exceed -eq 255 ]; then
-	echo did not exit timely \(KILLED\) >> $logfile;
-else
-	echo did not exit timely \($exceed/$exceed_grace\) >> $logfile;
-fi
-
-echo intermediate ok: $int_ok >> $logfile
+echo " (exit_status=$exit_status)" >> $logfile
 
 echo -n "tree decomposition: " >> $logfile
-cmd="td-validate $file $stem.td"
-$cmd &>> $logfile
+$TDVALIDATE $input $stem.td &>> $logfile
 vresult=$?
-# rm $stem.td
 
 echo -n =======run time=========================== >> $logfile
+OLDIFS=$IFS
 IFS=
 echo $time_run >> $logfile
 IFS=$OLDIFS
@@ -187,31 +135,24 @@ echo "user: $(whoami)" >> $logfile
 echo "cwd: $(pwd)" >> $logfile
 echo "timestamp: $(date)" >> $logfile
 echo -n "input sha1: " >> $logfile
-sha1sum < $file >>$logfile
+sha1sum < $input >>$logfile
 echo -n "treedec sha1: " >> $logfile
 sha1sum < $stem.td >>$logfile
 
-echo last_intermediate: $last_intermediate >> $logfile
 echo decomposition bag size: $dbs >> $logfile
 echo -n "valid treedecomposition: " >> $logfile
 if [ $vresult -ne 0 ]; then
 	echo no >> $logfile
-elif [ "$mode" = he ]; then
-	echo $int_ok >> $logfile
 else
 	echo yes >> $logfile
 fi
 
-# TODO
-# if mode=ex
-# echo optimal treedecomposition: yes/no
 
 echo =======tree decomposition================= >> $logfile
 cat $stem.td >> $logfile
 
 echo ========csv============================== >> $logfile
-status=`expr $vresult`
-echo -n "$version; $basename; $timeout; $dbs; $status; $exceed; " >> $logfile
+echo -n "$version; $basename; $timeout; $dbs; $vresult; $exit_status; " >> $logfile
 echo    "$time_real; $time_user; $time_sys" >> $logfile
 
 exit $vresult

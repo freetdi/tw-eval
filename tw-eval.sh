@@ -68,19 +68,19 @@ exec > $logfile
 # copy input file to ramdisk
 cp $file $input
 
-SEED=`od -An -t u4 -N4 /dev/urandom`
+TW_EVAL_SEED=${TW_EVAL_SEED-`od -An -t u4 -N4 /dev/urandom`}
 
 echo =======what===============================
 echo program: `which $program`
 echo input graph: $file
 echo timeout: $timeout
-echo random seed: $SEED
+echo random seed: $TW_EVAL_SEED
 
 run()
 {
   # run the program for a duration of $timeout then send TERM
   # if still running after .5 seconds, also send KILL
-  timeout --kill-after=.5 --signal=TERM $timeout $program -s $SEED \
+  timeout --kill-after=.5 --signal=TERM $timeout $program -s $TW_EVAL_SEED \
     <  $input \
     2> $errtmp \
     >  $outtmp
@@ -109,12 +109,12 @@ echo =======intermediate results===============
 num_vertices=$(grep -e '^p' $input | cut -f 3 -d ' ')
 
 # everyone starts with a trivial tree decomposition
-echo $num_vertices $start_time
+echo | awk '{printf "%10d %4d\n",0,'$num_vertices';}'
 
 grep -e '^c status' $outtmp |
 while read n
 do {
-  echo $n | cut -f 3,4 -d ' '
+  echo $n | awk '{printf "%10d %4d\n",'"\$4-$start_time, \$3"';}'
 }
 done
 

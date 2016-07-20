@@ -18,15 +18,14 @@
 #
 #
 
-if [ $# -ne 3 ]; then
+if [ $# -lt 2 -o $# -gt 3 ]; then
 	echo usage:
-	echo "$0 <program> <grfile> <timeout>"
+	echo "$0 <grfile> <timeout> [<program>]"
 	exit 2
 fi
 
-program=$1
-file=$2
-timeout=$3
+file=$1
+timeout=$2
 version=1
 TDVALIDATE=td-validate # must be in PATH
 
@@ -44,6 +43,18 @@ basename=`basename $file`
 stem=${basename%.gr}
 me=$(basename $0)
 
+if [ $me = tw-eval-ex.sh ]; then
+       mode=ex
+       program=tw-exact
+else
+       mode=he
+       program=tw-heuristic
+fi
+
+if [ -n "$3" ]; then
+	program="$3"
+fi
+
 tmpdir=$(mktemp --directory --tmpdir=/dev/shm $me-XXXXXXXX)
 trap "rm -rf $tmpdir" EXIT
 
@@ -52,16 +63,18 @@ outtmp=$tmpdir/out
 errtmp=$tmpdir/err
 logfile=/dev/stdout # or $stem.log or $tmpdir/$stem.log
 
+exec > $logfile
+
 # copy input file to ramdisk
 cp $file $input
 
 SEED=`od -An -t u4 -N4 /dev/urandom`
 
-echo =======what============================ >> $logfile
-echo program: `which $program` >> $logfile
-echo input graph: $file >> $logfile
-echo timeout: $timeout >> $logfile
-echo random seed: $SEED >> $logfile
+echo =======what===============================
+echo program: `which $program`
+echo input graph: $file
+echo timeout: $timeout
+echo random seed: $SEED
 
 run()
 {
@@ -87,72 +100,71 @@ time_sys=${time_runs[5]}
 
 grep -v -e '^c status' <$outtmp >$stem.td
 
-echo =======stderr output from program========= >> $logfile
-cat $errtmp >> $logfile
+echo =======stderr output from program=========
+cat $errtmp
 
-echo =======intermediate results================ >> $logfile
+echo =======intermediate results===============
 
 # get graph's number of vertices
 num_vertices=$(grep -e '^p' $input | cut -f 3 -d ' ')
 
 # everyone starts with a trivial tree decomposition
-echo $num_vertices $start_time >> $logfile
+echo $num_vertices $start_time
 
 grep -e '^c status' $outtmp |
 while read n
 do {
-  echo $n | cut -f 3,4 -d ' ' >> $logfile
+  echo $n | cut -f 3,4 -d ' '
 }
 done
 
-echo =======validation============================ >> $logfile
+echo =======validation=========================
 dbs=$(grep -e '^s' $stem.td | cut -f 4 -d ' ')
 if [ -z "$dbs" ]; then
 	dbs=-1
 fi
 
 if [ $exit_status -eq 0 ]; then
-  echo -n exited on its own >> $logfile;
+  echo -n exited on its own
 elif [ $exit_status -eq 124 ]; then
-	echo -n exited when we sent TERM >> $logfile;
+	echo -n exited when we sent TERM
 else
-  echo -n failure: either we sent KILL or it aborted >> $logfile;
+  echo -n failure: either we sent KILL or it aborted
 fi
-echo " (exit_status=$exit_status)" >> $logfile
+echo " (exit_status=$exit_status)"
 
-echo -n "tree decomposition: " >> $logfile
+echo -n "tree decomposition: "
 $TDVALIDATE $input $stem.td &>> $logfile
 vresult=$?
 
-echo -n =======run time=========================== >> $logfile
+echo -n =======run time===========================
 OLDIFS=$IFS
 IFS=
-echo $time_run >> $logfile
+echo $time_run
 IFS=$OLDIFS
 
-echo =======misc================================== >> $logfile
-echo "user: $(whoami)" >> $logfile
-echo "cwd: $(pwd)" >> $logfile
-echo "timestamp: $(date)" >> $logfile
-echo -n "input sha1: " >> $logfile
-sha1sum < $input >>$logfile
-echo -n "treedec sha1: " >> $logfile
-sha1sum < $stem.td >>$logfile
+echo =======misc===============================
+echo "user: $(whoami)"
+echo "cwd: $(pwd)"
+echo "timestamp: $(date)"
+echo -n "input sha1: "
+sha1sum < $input
+echo -n "treedec sha1: "
+sha1sum < $stem.td
 
-echo decomposition bag size: $dbs >> $logfile
-echo -n "valid treedecomposition: " >> $logfile
+echo decomposition bag size: $dbs
+echo -n "valid treedecomposition: "
 if [ $vresult -ne 0 ]; then
-	echo no >> $logfile
+	echo no
 else
-	echo yes >> $logfile
+	echo yes
 fi
 
+echo =======tree decomposition=================
+cat $stem.td
 
-echo =======tree decomposition================= >> $logfile
-cat $stem.td >> $logfile
-
-echo ========csv============================== >> $logfile
-echo -n "$version; $basename; $timeout; $dbs; $vresult; $exit_status; " >> $logfile
-echo    "$time_real; $time_user; $time_sys" >> $logfile
+echo =======csv================================
+echo -n "$version; $basename; $timeout; $dbs; $vresult; $exit_status; "
+echo    "$time_real; $time_user; $time_sys"
 
 exit $vresult

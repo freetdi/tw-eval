@@ -80,7 +80,7 @@ run()
 {
   # run the program for a duration of $timeout then send TERM
   # if still running after .5 seconds, also send KILL
-  timeout --kill-after=.5 --signal=TERM $timeout $program -s $TW_EVAL_SEED \
+  timeout --kill-after=.5 --signal=TERM $timeout $program -s $TW_EVAL_SEED $TW_ARGS \
     <  $input \
     2> $errtmp \
     >  $outtmp

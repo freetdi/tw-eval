@@ -63,7 +63,7 @@ outtmp=$tmpdir/out
 errtmp=$tmpdir/err
 logfile=/dev/stdout # or $stem.log or $tmpdir/$stem.log
 
-exec > $logfile
+exec &> $logfile
 
 # copy input file to ramdisk
 cp $file $input
@@ -134,10 +134,10 @@ fi
 echo " (exit_status=$exit_status)"
 
 echo -n "tree decomposition: "
-$TDVALIDATE $input $stem.td &>> $logfile
+$TDVALIDATE $input $stem.td
 vresult=$?
 
-echo -n =======run time===========================
+echo =======run time===========================
 OLDIFS=$IFS
 IFS=
 echo $time_run
